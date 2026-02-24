@@ -34,33 +34,7 @@ Vercel (frontend)
 
 Convex Cloud (backend)
 
-Architecture
 
-The system follows a reactive full-stack architecture:
-
-┌──────────────────────┐
-│        Client        │
-│  Next.js + React     │
-│  Convex React Hooks  │
-└──────────┬───────────┘
-           │ Live Queries / Mutations
-           ▼
-┌──────────────────────┐
-│       Convex         │
-│  Queries             │
-│  Mutations           │
-│  Indexed DB          │
-│  Real-time Engine    │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│       Database       │
-│ Conversations        │
-│ Messages             │
-│ ReadReceipts         │
-│ Typing Sessions      │
-└──────────────────────┘
 Data Flow
 
 The client subscribes to live queries using Convex hooks.
