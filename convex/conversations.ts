@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
 
 /**
  * Create or get an existing 1–1 conversation
@@ -11,7 +12,10 @@ export const getOrCreateDirectConversation = mutation({
     otherUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const members = [args.meId, args.otherUserId].sort();
+    // Keep stable ordering
+    const members: [Id<"users">, Id<"users">] = [args.meId, args.otherUserId].sort(
+      (a, b) => a.localeCompare(b)
+    ) as [Id<"users">, Id<"users">];
 
     const existing = await ctx.db
       .query("conversations")
@@ -28,6 +32,18 @@ export const getOrCreateDirectConversation = mutation({
   },
 });
 
+/** Result item shape returned by listForUserWithUnread */
+type ConversationListItem = {
+  conversation: Doc<"conversations">;
+  lastMessage: Doc<"messages"> | null;
+  unreadCount: number;
+  otherUser: Doc<"users"> | null;
+  title: string;
+  avatarUrl: string;
+  isOnline: boolean;
+  lastSeen: number;
+};
+
 /**
  * Sidebar list: conversations for user + lastMessage + unreadCount
  * PLUS other user's profile info for nicer UI (name/avatar/online)
@@ -36,31 +52,22 @@ export const listForUserWithUnread = query({
   args: {
     userId: v.id("users"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ConversationListItem[]> => {
     // 1) all direct conversations containing me
     const convos = await ctx.db
       .query("conversations")
       .filter((q) => q.eq(q.field("isGroup"), false))
       .collect();
 
-    const mine = convos.filter((c) =>
-      c.memberIds.some((id) => id === args.userId)
-    );
+    const mine = convos.filter((c) => c.memberIds.some((id) => id === args.userId));
 
-    const results: Array<{
-      conversation: any;
-      lastMessage: any | null;
-      unreadCount: number;
-      otherUser: any | null;
-      title: string;
-      avatarUrl: string;
-      isOnline: boolean;
-      lastSeen: number;
-    }> = [];
+    const results: ConversationListItem[] = [];
 
     for (const c of mine) {
       // figure out the "other" user in a 1-1
-      const otherId = c.memberIds.find((id: any) => id !== args.userId) ?? null;
+      const otherId: Id<"users"> | null =
+        c.memberIds.find((id) => id !== args.userId) ?? null;
+
       const otherUser = otherId ? await ctx.db.get(otherId) : null;
 
       const title = otherUser?.name ?? "Conversation";
@@ -76,9 +83,7 @@ export const listForUserWithUnread = query({
 
       const lastMessage =
         msgs.length > 0
-          ? msgs.reduce((best, cur) =>
-              cur.createdAt > best.createdAt ? cur : best
-            )
+          ? msgs.reduce((best, cur) => (cur.createdAt > best.createdAt ? cur : best))
           : null;
 
       // 3) last read time
@@ -117,20 +122,19 @@ export const listForUserWithUnread = query({
 
     return results;
   },
-
-  
 });
+
 export const getConversationMeta = query({
   args: {
     conversationId: v.id("conversations"),
     meId: v.id("users"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ otherUser: Doc<"users"> | null } | null> => {
     const convo = await ctx.db.get(args.conversationId);
     if (!convo) return null;
 
-    const otherId =
-      convo.memberIds.find((id: any) => id !== args.meId) ?? null;
+    const otherId: Id<"users"> | null =
+      convo.memberIds.find((id) => id !== args.meId) ?? null;
 
     const otherUser = otherId ? await ctx.db.get(otherId) : null;
 

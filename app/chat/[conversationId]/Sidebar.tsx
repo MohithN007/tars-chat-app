@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter, useParams } from "next/navigation";
+import { Id } from "@/convex/_generated/dataModel";
 
 function initials(name?: string) {
   if (!name) return "U";
@@ -22,12 +23,25 @@ function formatListTime(ts?: number) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
-  // show "Mon 2:40 PM" style
-  return d.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-  });
+  return d.toLocaleString([], { month: "short", day: "numeric" });
 }
+
+type ConversationRow = {
+  conversation: {
+    _id: Id<"conversations">;
+    createdAt?: number;
+  };
+  lastMessage: {
+    body?: string;
+    deleted?: boolean;
+    createdAt?: number;
+  } | null;
+  unreadCount: number;
+  title: string;
+  avatarUrl: string;
+  isOnline: boolean;
+  lastSeen: number;
+};
 
 export default function Sidebar() {
   const { user, isLoaded } = useUser();
@@ -44,7 +58,7 @@ export default function Sidebar() {
   const conversations = useQuery(
     api.conversations.listForUserWithUnread,
     me ? { userId: me._id } : "skip"
-  );
+  ) as ConversationRow[] | undefined;
 
   const activeId = params?.conversationId as string | undefined;
 
@@ -53,7 +67,7 @@ export default function Sidebar() {
     const query = q.trim().toLowerCase();
     if (!query) return conversations;
 
-    return conversations.filter((item: any) => {
+    return conversations.filter((item) => {
       const title = (item.title ?? "Conversation").toLowerCase();
       const preview = (
         item.lastMessage?.deleted
@@ -124,17 +138,17 @@ export default function Sidebar() {
       <div className="flex-1 overflow-y-auto p-2">
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-zinc-500">
-            {q.trim()
-              ? "No matches. Try a different search."
-              : (
-                <>
-                  No conversations yet. Click <b>New</b> to start one.
-                </>
-              )}
+            {q.trim() ? (
+              "No matches. Try a different search."
+            ) : (
+              <>
+                No conversations yet. Click <b>New</b> to start one.
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-1">
-            {filtered.map((item: any) => {
+            {filtered.map((item) => {
               const idStr = String(item.conversation._id);
               const active = activeId === idStr;
 
@@ -163,7 +177,6 @@ export default function Sidebar() {
                       : "hover:bg-zinc-50 dark:hover:bg-neutral-900/60",
                   ].join(" ")}
                 >
-                  {/* active indicator bar */}
                   {active && (
                     <span className="absolute left-1 top-3 bottom-3 w-1 rounded-full bg-black dark:bg-white" />
                   )}
@@ -187,7 +200,9 @@ export default function Sidebar() {
                         className={[
                           "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2",
                           "border-white dark:border-neutral-950",
-                          isOnline ? "bg-green-500" : "bg-zinc-300 dark:bg-neutral-700",
+                          isOnline
+                            ? "bg-green-500"
+                            : "bg-zinc-300 dark:bg-neutral-700",
                         ].join(" ")}
                         title={isOnline ? "Online" : "Offline"}
                       />
@@ -231,9 +246,6 @@ export default function Sidebar() {
           </div>
         )}
       </div>
-
-      {/* Footer */}
-      
     </aside>
   );
 }

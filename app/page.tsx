@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from "@clerk/nextjs";
+import {
+  SignedIn,
+  SignedOut,
+  SignInButton,
+  UserButton,
+  useUser,
+} from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 
 function initials(name?: string) {
   if (!name) return "U";
@@ -16,9 +23,25 @@ function formatTime(ts?: number) {
   const d = new Date(ts);
   const now = new Date();
   const isToday = d.toDateString() === now.toDateString();
-  if (isToday) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (isToday)
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleString([], { month: "short", day: "numeric" });
 }
+
+/** Exactly the fields you use from listForUserWithUnread (no `any`) */
+type ConversationListItem = {
+  conversation: {
+    _id: Id<"conversations">;
+    createdAt?: number | null;
+  };
+  title?: string | null;
+  unreadCount?: number | null;
+  lastMessage?: {
+    body?: string | null;
+    deleted?: boolean | null;
+    createdAt?: number | null;
+  } | null;
+};
 
 function SignedInHome() {
   const { user, isLoaded } = useUser();
@@ -28,15 +51,20 @@ function SignedInHome() {
     isLoaded && user ? { clerkId: user.id } : "skip"
   );
 
+  const meId = me?._id;
+
   const conversations = useQuery(
     api.conversations.listForUserWithUnread,
-    me ? { userId: me._id } : "skip"
-  );
+    meId ? { userId: meId } : "skip"
+  ) as ConversationListItem[] | undefined;
 
+  // ✅ no `any`
   const totalUnread =
-    conversations?.reduce((sum: number, c: any) => sum + (c.unreadCount ?? 0), 0) ?? 0;
+    conversations?.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0) ?? 0;
 
   const recent = (conversations ?? []).slice(0, 5);
+
+  const isLoading = me === undefined || conversations === undefined;
 
   return (
     <main className="min-h-screen bg-zinc-50 dark:bg-neutral-950">
@@ -61,7 +89,7 @@ function SignedInHome() {
         <div className="mt-6 grid md:grid-cols-3 gap-4">
           {/* Profile card */}
           <div className="md:col-span-2 rounded-2xl border border-zinc-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 shadow-sm">
-            {!me || conversations === undefined ? (
+            {isLoading || me === null ? (
               <div className="animate-pulse">
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-full bg-zinc-200 dark:bg-neutral-800" />
@@ -103,7 +131,9 @@ function SignedInHome() {
                       className={[
                         "absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2",
                         "border-white dark:border-neutral-950",
-                        me.isOnline ? "bg-green-500" : "bg-zinc-300 dark:bg-neutral-700",
+                        me.isOnline
+                          ? "bg-green-500"
+                          : "bg-zinc-300 dark:bg-neutral-700",
                       ].join(" ")}
                       title={me.isOnline ? "Online" : "Offline"}
                     />
@@ -113,9 +143,12 @@ function SignedInHome() {
                     <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 truncate">
                       {me.name ?? "You"}
                     </div>
+
+                    {/* ✅ FIX: email is from Clerk, not Convex */}
                     <div className="text-sm text-zinc-500 truncate">
-                      {me.email ?? "Signed in"}
+                      {user?.primaryEmailAddress?.emailAddress ?? "Signed in"}
                     </div>
+
                     <div className="text-xs text-zinc-400 mt-1">
                       {me.isOnline ? "Online now" : "Offline"}
                     </div>
@@ -228,7 +261,8 @@ function SignedInHome() {
             </div>
           ) : (
             <div className="mt-4 grid gap-2">
-              {recent.map((item: any) => {
+              {/* ✅ no `any` */}
+              {recent.map((item) => {
                 const idStr = String(item.conversation._id);
                 const title = item.title ?? "Conversation";
                 const unread = item.unreadCount ?? 0;
@@ -237,7 +271,8 @@ function SignedInHome() {
                   ? "This message was deleted"
                   : item.lastMessage?.body ?? "No messages yet";
 
-                const ts = item.lastMessage?.createdAt ?? item.conversation?.createdAt;
+                const ts =
+                  item.lastMessage?.createdAt ?? item.conversation?.createdAt ?? undefined;
 
                 return (
                   <Link
@@ -294,7 +329,6 @@ export default function Home() {
               <div className="mt-6 inline-flex">
                 <div className="rounded-2xl border border-zinc-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-6 shadow-sm">
                   <SignInButton />
-                 
                 </div>
               </div>
             </div>

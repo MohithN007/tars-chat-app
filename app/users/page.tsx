@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 
 function initials(name?: string) {
   if (!name) return "U";
@@ -12,12 +13,17 @@ function initials(name?: string) {
   return parts.map((p) => p[0]?.toUpperCase()).join("") || "U";
 }
 
+type UserRow = Doc<"users"> & {
+  // optional if you ever add it later; safe for now
+  email?: string | null;
+};
+
 export default function UsersPage() {
   const router = useRouter();
   const { user, isLoaded } = useUser();
 
   const [q, setQ] = useState("");
-  const [openingFor, setOpeningFor] = useState<string | null>(null);
+  const [openingFor, setOpeningFor] = useState<Id<"users"> | null>(null);
 
   const me = useQuery(
     api.users.getByClerkId,
@@ -27,7 +33,7 @@ export default function UsersPage() {
   const users = useQuery(
     api.users.getAllUsersExceptMe,
     isLoaded && user ? { clerkId: user.id } : "skip"
-  );
+  ) as UserRow[] | undefined;
 
   const getOrCreateConversation = useMutation(
     api.conversations.getOrCreateDirectConversation
@@ -38,15 +44,20 @@ export default function UsersPage() {
     const query = q.trim().toLowerCase();
     if (!query) return users;
 
-    return users.filter((u: any) => {
+    return users.filter((u) => {
       const name = (u.name ?? "").toLowerCase();
-      const email = (u.email ?? "").toLowerCase();
+
+      // Your Convex user doc doesn't have email right now.
+      // Keep search working anyway (if you add email later it will use it automatically).
+      const email = ((u as UserRow).email ?? "").toLowerCase();
+
       return name.includes(query) || email.includes(query);
     });
   }, [users, q]);
 
-  async function openChat(otherUserId: string) {
-    if (!me) return;
+  async function openChat(otherUserId: Id<"users">) {
+    // Convex query returns `undefined` while loading, `null` if not found, or the doc
+    if (!me || me === undefined) return;
 
     setOpeningFor(otherUserId);
     try {
@@ -61,8 +72,8 @@ export default function UsersPage() {
     }
   }
 
-  // Loading skeleton (same logic, nicer UI)
-  if (!isLoaded || !me || !users) {
+  // Loading skeleton
+  if (!isLoaded || me === undefined || users === undefined || me === null) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-neutral-950">
         <div className="max-w-3xl mx-auto px-4 py-6">
@@ -102,13 +113,13 @@ export default function UsersPage() {
           </div>
 
           <button
-  onClick={() => router.push("/")}
-  className="text-sm px-3 py-2 rounded-2xl border border-zinc-200 dark:border-neutral-800
-             bg-white dark:bg-neutral-950 hover:bg-zinc-50 dark:hover:bg-neutral-900 transition"
-  title="Back to home"
->
-  ← Home
-</button>
+            onClick={() => router.push("/")}
+            className="text-sm px-3 py-2 rounded-2xl border border-zinc-200 dark:border-neutral-800
+                       bg-white dark:bg-neutral-950 hover:bg-zinc-50 dark:hover:bg-neutral-900 transition"
+            title="Back to home"
+          >
+            ← Home
+          </button>
         </div>
 
         {/* Search */}
@@ -136,17 +147,17 @@ export default function UsersPage() {
             </div>
           ) : (
             <div className="grid gap-3">
-              {filtered.map((u: any) => {
-                const idStr = String(u._id);
+              {filtered.map((u) => {
+                const id = u._id; // Id<"users">
                 const name = u.name ?? "User";
-                const email = u.email ?? "";
+                const email = ((u as UserRow).email ?? "") || "";
                 const isOnline = !!u.isOnline;
 
                 return (
                   <button
-                    key={idStr}
-                    onClick={() => openChat(u._id)}
-                    disabled={openingFor === idStr}
+                    key={String(id)}
+                    onClick={() => openChat(id)}
+                    disabled={openingFor === id}
                     className="w-full text-left rounded-2xl border border-zinc-200 dark:border-neutral-800
                                bg-white dark:bg-neutral-950 p-3 flex items-center gap-3
                                hover:bg-zinc-50 dark:hover:bg-neutral-900/60 transition
@@ -190,9 +201,7 @@ export default function UsersPage() {
                       </div>
 
                       {email ? (
-                        <div className="text-xs text-zinc-500 truncate">
-                          {email}
-                        </div>
+                        <div className="text-xs text-zinc-500 truncate">{email}</div>
                       ) : (
                         <div className="text-xs text-zinc-500 truncate">
                           Tap to message
@@ -203,7 +212,7 @@ export default function UsersPage() {
                     {/* CTA */}
                     <div className="shrink-0">
                       <span className="text-xs px-3 py-2 rounded-2xl bg-black text-white inline-block">
-                        {openingFor === idStr ? "Opening…" : "Message"}
+                        {openingFor === id ? "Opening…" : "Message"}
                       </span>
                     </div>
                   </button>
@@ -212,8 +221,6 @@ export default function UsersPage() {
             </div>
           )}
         </div>
-
-       
       </div>
     </div>
   );

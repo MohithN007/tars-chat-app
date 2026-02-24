@@ -43,6 +43,8 @@ function initials(name?: string) {
   return parts.map((p) => p[0]?.toUpperCase()).join("") || "U";
 }
 
+type Reaction = { emoji: string; userId: Id<"users"> };
+
 export default function ChatPage() {
   const router = useRouter();
   const params = useParams();
@@ -62,18 +64,19 @@ export default function ChatPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [failedDraft, setFailedDraft] = useState<string | null>(null);
 
-  // for typing expiry refresh (kept, but reduced re-render frequency)
+  // for typing expiry refresh
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const i = setInterval(() => setNow(Date.now()), 800);
     return () => clearInterval(i);
   }, []);
 
-  // Queries / mutations (ALL hooks must be before conditional returns)
+  // Queries / mutations
   const me = useQuery(
     api.users.getByClerkId,
     isLoaded && user ? { clerkId: user.id } : "skip"
   );
+  const myId = me?._id;
 
   const messages = useQuery(
     api.messages.getMessages,
@@ -98,19 +101,19 @@ export default function ChatPage() {
   const markRead = useMutation(api.readReceipts.markRead);
 
   // typing notifier (hook)
-  const notifyTyping = useTyping(conversationId, me ? me._id : undefined);
+  const notifyTyping = useTyping(conversationId, myId);
 
   const othersTyping =
-    typingUsers?.filter((t) => t.userId !== me?._id && (t.expiresAt ?? 0) > now) ??
+    typingUsers?.filter((t) => t.userId !== myId && (t.expiresAt ?? 0) > now) ??
     [];
 
   const emojis = useMemo(() => ["👍", "❤️", "😂", "😮", "😢"], []);
 
   // mark read whenever messages update
   useEffect(() => {
-    if (!me || !messages) return;
-    markRead({ conversationId, userId: me._id });
-  }, [messages, me?._id, conversationId, markRead]);
+    if (!myId || !messages) return;
+    markRead({ conversationId, userId: myId });
+  }, [messages, myId, conversationId, markRead]);
 
   // scroll tracking
   function handleScroll() {
@@ -118,8 +121,7 @@ export default function ChatPage() {
     if (!el) return;
 
     const threshold = 60;
-    const atBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
     setIsAtBottom(atBottom);
   }
 
@@ -164,7 +166,7 @@ export default function ChatPage() {
 
   async function handleSend() {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || !me) return;
 
     setSending(true);
     setSendError(null);
@@ -217,18 +219,14 @@ export default function ChatPage() {
 
             <span
               className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-neutral-950 ${
-                otherUser?.isOnline
-                  ? "bg-green-500"
-                  : "bg-zinc-300 dark:bg-neutral-700"
+                otherUser?.isOnline ? "bg-green-500" : "bg-zinc-300 dark:bg-neutral-700"
               }`}
               title={otherUser?.isOnline ? "Online" : "Offline"}
             />
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="font-semibold truncate">
-              {otherUser?.name ?? "Chat"}
-            </div>
+            <div className="font-semibold truncate">{otherUser?.name ?? "Chat"}</div>
             <div className="text-xs text-zinc-500">
               {othersTyping.length > 0
                 ? "Typing…"
@@ -260,9 +258,8 @@ export default function ChatPage() {
         ) : (
           messages.map((m) => {
             const isMe = m.senderId === me._id;
-            const reactions = (m.reactions ?? []) as any[];
+            const reactions = (m.reactions ?? []) as Reaction[];
 
-            // counts by emoji
             const counts = new Map<string, number>();
             for (const r of reactions) {
               counts.set(r.emoji, (counts.get(r.emoji) ?? 0) + 1);
@@ -327,9 +324,7 @@ export default function ChatPage() {
                       <div className="relative">
                         <button
                           onClick={() =>
-                            setOpenReactionsFor(
-                              openReactionsFor === m._id ? null : m._id
-                            )
+                            setOpenReactionsFor(openReactionsFor === m._id ? null : m._id)
                           }
                           className="text-xs border rounded-full px-2 py-0.5 hover:bg-zinc-100 dark:hover:bg-neutral-900 border-zinc-200 dark:border-neutral-800 transition"
                           title="Add reaction"
@@ -362,7 +357,7 @@ export default function ChatPage() {
                     </div>
                   )}
 
-                  {/* Meta row: time + actions */}
+                  {/* Meta row */}
                   <div
                     className={`mt-1 flex items-center gap-2 ${
                       isMe ? "justify-end" : "justify-start"
@@ -374,9 +369,7 @@ export default function ChatPage() {
 
                     {isMe && !m.deleted && (
                       <button
-                        onClick={() =>
-                          deleteMessage({ messageId: m._id, userId: me._id })
-                        }
+                        onClick={() => deleteMessage({ messageId: m._id, userId: me._id })}
                         className="text-[11px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition"
                       >
                         Delete
@@ -399,10 +392,7 @@ export default function ChatPage() {
             <span className="animate-bounce [animation-delay:240ms]">·</span>
           </span>
           <span className="truncate">
-            {othersTyping
-              .map((t) => (t.userName as string | undefined) ?? "Someone")
-              .join(", ")}{" "}
-            {othersTyping.length === 1 ? "is" : "are"} typing…
+            Someone {othersTyping.length === 1 ? "is" : "are"} typing…
           </span>
         </div>
       )}

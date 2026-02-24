@@ -5,6 +5,15 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import type { Id } from "@/convex/_generated/dataModel";
+
+/** Matches the shape you already use from listForUserWithUnread */
+type ConversationListItem = {
+  conversation: { _id: Id<"conversations"> };
+  title?: string | null;
+  lastMessage?: { body?: string | null; deleted?: boolean | null } | null;
+  unreadCount?: number | null;
+};
 
 export default function ConversationsPage() {
   const { user, isLoaded } = useUser();
@@ -15,14 +24,16 @@ export default function ConversationsPage() {
     isLoaded && user ? { clerkId: user.id } : "skip"
   );
 
-  // ✅ Use the same backend that Sidebar uses
+  // Use a separate variable so TS understands narrowing better
+  const meId = me?._id;
+
   const conversations = useQuery(
     api.conversations.listForUserWithUnread,
-    me ? { userId: me._id } : "skip"
-  );
+    meId ? { userId: meId } : "skip"
+  ) as ConversationListItem[] | undefined;
 
-  // Loading (keep simple)
-  if (!me || conversations === undefined) {
+  // Loading: Convex returns `undefined` while loading
+  if (me === undefined || conversations === undefined) {
     return (
       <div className="h-screen flex">
         <div className="w-80 border-r hidden md:flex flex-col bg-white dark:bg-neutral-950">
@@ -52,6 +63,31 @@ export default function ConversationsPage() {
     );
   }
 
+  // If user record doesn't exist (rare), keep app stable
+  if (me === null) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-white dark:bg-neutral-950">
+        <div className="text-center px-6">
+          <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Profile not found
+          </div>
+          <div className="text-xs text-zinc-500 mt-1">
+            Try signing out and signing in again.
+          </div>
+          <button
+            onClick={() => router.push("/")}
+            className="mt-4 text-sm px-4 py-2 rounded-2xl border border-zinc-200 dark:border-neutral-800
+                       bg-white dark:bg-neutral-950 hover:bg-zinc-50 dark:hover:bg-neutral-900 transition"
+          >
+            Go Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const items = conversations;
+
   return (
     <div className="h-screen flex bg-white dark:bg-neutral-950">
       {/* Desktop sidebar */}
@@ -59,7 +95,7 @@ export default function ConversationsPage() {
 
       {/* Main panel */}
       <main className="flex-1 bg-zinc-50 dark:bg-neutral-950 flex flex-col">
-        {/* ✅ Top header actions */}
+        {/* Top header actions */}
         <div className="sticky top-0 z-10 border-b border-zinc-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-950/80 backdrop-blur">
           <div className="p-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -67,7 +103,7 @@ export default function ConversationsPage() {
                 Conversations
               </div>
               <div className="text-xs text-zinc-500 truncate">
-                {conversations.length === 0
+                {items.length === 0
                   ? "Start your first chat"
                   : "Pick a chat from the sidebar"}
               </div>
@@ -97,7 +133,7 @@ export default function ConversationsPage() {
 
         {/* Center content */}
         <div className="flex-1 flex items-center justify-center">
-          {conversations.length === 0 ? (
+          {items.length === 0 ? (
             <div className="text-center px-6">
               <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                 No conversations yet
@@ -133,7 +169,7 @@ export default function ConversationsPage() {
               <div className="mt-6 md:hidden w-full max-w-md text-left">
                 <div className="text-xs text-zinc-500 mb-2">Your chats</div>
                 <div className="space-y-2">
-                  {conversations.map((item: any) => {
+                  {items.map((item) => {
                     const idStr = String(item.conversation._id);
                     const title = item.title ?? "Conversation";
                     const preview =
